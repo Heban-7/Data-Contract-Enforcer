@@ -1,0 +1,51 @@
+version: 2
+models:
+- name: week3_document_refinery_extractions
+  description: Contract generated from outputs/week3/extractions.jsonl. Covers 17
+    fields.
+  columns:
+  - name: doc_id
+    tests:
+    - not_null
+    - unique
+  - name: source_path
+    tests:
+    - not_null
+  - name: source_hash
+    tests:
+    - not_null
+  - name: extraction_model
+    tests:
+    - not_null
+    - accepted_values:
+        values:
+        - claude-3-haiku-20240307
+        - claude-3-5-sonnet-20241022
+        - gpt-4-turbo-2024-04-09
+  - name: processing_time_ms
+    tests:
+    - not_null
+  - name: token_count_input
+    tests:
+    - not_null
+  - name: token_count_output
+    tests:
+    - not_null
+  - name: extracted_at
+    tests:
+    - not_null
+  - name: extracted_facts_fact_id
+    tests:
+    - unique
+  - name: entities_entity_id
+    tests:
+    - unique
+  - name: entities_type
+    tests:
+    - accepted_values:
+        values:
+        - PERSON
+        - AMOUNT
+        - ORG
+        - LOCATION
+        - DATE

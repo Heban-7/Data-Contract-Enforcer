@@ -1,0 +1,66 @@
+version: 2
+models:
+- name: week5_event_records
+  description: Contract generated from outputs/week5/events.jsonl. Covers 14 fields.
+  columns:
+  - name: event_id
+    tests:
+    - not_null
+    - unique
+  - name: event_type
+    tests:
+    - not_null
+  - name: aggregate_id
+    tests:
+    - not_null
+    - unique
+  - name: aggregate_type
+    tests:
+    - not_null
+    - accepted_values:
+        values:
+        - Document
+        - Report
+        - Entity
+        - User
+        - Pipeline
+  - name: sequence_number
+    tests:
+    - not_null
+  - name: payload_detail
+    tests:
+    - not_null
+  - name: payload_processed_items
+    tests:
+    - not_null
+  - name: metadata_causation_id
+    tests:
+    - unique
+  - name: metadata_correlation_id
+    tests:
+    - not_null
+    - unique
+  - name: metadata_user_id
+    tests:
+    - not_null
+    - unique
+  - name: metadata_source_service
+    tests:
+    - not_null
+    - accepted_values:
+        values:
+        - week3-document-refinery
+        - week1-intent-correlator
+        - week5-event-platform
+  - name: schema_version
+    tests:
+    - not_null
+    - accepted_values:
+        values:
+        - '1.0'
+  - name: occurred_at
+    tests:
+    - not_null
+  - name: recorded_at
+    tests:
+    - not_null

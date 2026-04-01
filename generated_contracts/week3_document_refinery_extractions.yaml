@@ -1,0 +1,146 @@
+kind: DataContract
+apiVersion: v3.0.0
+id: week3-document-refinery-extractions
+info:
+  title: Auto-generated contract for week3-document-refinery-extractions
+  version: 1.0.0
+  owner: data-engineering-team
+  description: Contract generated from outputs/week3/extractions.jsonl. Covers 17
+    fields.
+servers:
+  local:
+    type: local
+    path: outputs/week3/extractions.jsonl
+    format: jsonl
+terms:
+  usage: Internal inter-system data contract. Do not publish.
+  limitations: confidence must remain in 0.0-1.0 float range.
+schema:
+  doc_id:
+    type: string
+    required: true
+    format: uuid
+    pattern: ^[0-9a-f-]{36}$
+  source_path:
+    type: string
+    required: true
+  source_hash:
+    type: string
+    required: true
+    pattern: ^[a-f0-9]{64}$
+    description: SHA-256 hash.
+  extraction_model:
+    type: string
+    required: true
+    enum:
+    - claude-3-haiku-20240307
+    - claude-3-5-sonnet-20241022
+    - gpt-4-turbo-2024-04-09
+  processing_time_ms:
+    type: integer
+    required: true
+    minimum: 412.0
+    maximum: 3496.0
+  token_count_input:
+    type: integer
+    required: true
+    minimum: 2010.0
+    maximum: 7999.0
+  token_count_output:
+    type: integer
+    required: true
+    minimum: 318.0
+    maximum: 1996.0
+  extracted_at:
+    type: string
+    required: true
+    format: date-time
+  extracted_facts_fact_id:
+    type: string
+    required: false
+    format: uuid
+    pattern: ^[0-9a-f-]{36}$
+  extracted_facts_text:
+    type: string
+    required: false
+  extracted_facts_confidence:
+    type: number
+    required: false
+    minimum: 0.0
+    maximum: 1.0
+    description: Confidence score. Must remain 0.0-1.0 float. BREAKING if changed
+      to 0-100.
+  extracted_facts_page_ref:
+    type: number
+    required: false
+    minimum: 1.0
+    maximum: 20.0
+  extracted_facts_source_excerpt:
+    type: string
+    required: false
+  entities_entity_id:
+    type: string
+    required: false
+    format: uuid
+    pattern: ^[0-9a-f-]{36}$
+  entities_name:
+    type: string
+    required: false
+  entities_type:
+    type: string
+    required: false
+    enum:
+    - PERSON
+    - AMOUNT
+    - ORG
+    - LOCATION
+    - DATE
+  entities_canonical_value:
+    type: string
+    required: false
+quality:
+  type: SodaChecks
+  specification:
+    checks:
+    - missing_count(doc_id) = 0
+    - duplicate_count(doc_id) = 0
+    - missing_count(source_path) = 0
+    - missing_count(source_hash) = 0
+    - missing_count(extraction_model) = 0
+    - missing_count(processing_time_ms) = 0
+    - missing_count(token_count_input) = 0
+    - missing_count(token_count_output) = 0
+    - missing_count(extracted_at) = 0
+    - min(extracted_facts_confidence) >= 0.0
+    - max(extracted_facts_confidence) <= 1.0
+    - min(extracted_facts_page_ref) >= 1.0
+    - max(extracted_facts_page_ref) <= 20.0
+    - row_count >= 1
+lineage:
+  upstream: []
+  downstream:
+  - id: service::week3-refinery
+    description: service::week3-refinery consumes data from table::extractions
+    fields_consumed:
+    - doc_id
+    - extracted_facts
+  - id: pipeline::extraction-pipeline
+    description: pipeline::extraction-pipeline consumes data from service::week3-refinery
+    fields_consumed:
+    - doc_id
+    - extracted_facts
+  - id: external::langsmith
+    description: external::langsmith consumes data from pipeline::extraction-pipeline
+    fields_consumed:
+    - doc_id
+    - extracted_facts
+  - id: service::week5-event-platform
+    description: service::week5-event-platform consumes data from table::events
+    fields_consumed:
+    - doc_id
+    - extracted_facts
+  - id: pipeline::event-pipeline
+    description: pipeline::event-pipeline consumes data from service::week5-event-platform
+    fields_consumed:
+    - doc_id
+    - extracted_facts

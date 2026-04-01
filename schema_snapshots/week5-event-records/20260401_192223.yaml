@@ -1,0 +1,132 @@
+kind: DataContract
+apiVersion: v3.0.0
+id: week5-event-records
+info:
+  title: Auto-generated contract for week5-event-records
+  version: 1.0.0
+  owner: data-engineering-team
+  description: Contract generated from outputs/week5/events.jsonl. Covers 14 fields.
+servers:
+  local:
+    type: local
+    path: outputs/week5/events.jsonl
+    format: jsonl
+terms:
+  usage: Internal inter-system data contract. Do not publish.
+  limitations: confidence must remain in 0.0-1.0 float range.
+schema:
+  event_id:
+    type: string
+    required: true
+    format: uuid
+    pattern: ^[0-9a-f-]{36}$
+  event_type:
+    type: string
+    required: true
+  aggregate_id:
+    type: string
+    required: true
+    format: uuid
+    pattern: ^[0-9a-f-]{36}$
+  aggregate_type:
+    type: string
+    required: true
+    enum:
+    - Document
+    - Report
+    - Entity
+    - User
+    - Pipeline
+  sequence_number:
+    type: integer
+    required: true
+    minimum: 1.0
+    maximum: 10.0
+  payload_detail:
+    type: string
+    required: true
+  payload_processed_items:
+    type: integer
+    required: true
+    minimum: 1.0
+    maximum: 100.0
+  metadata_causation_id:
+    type: string
+    required: false
+    format: uuid
+    pattern: ^[0-9a-f-]{36}$
+  metadata_correlation_id:
+    type: string
+    required: true
+    format: uuid
+    pattern: ^[0-9a-f-]{36}$
+  metadata_user_id:
+    type: string
+    required: true
+    format: uuid
+    pattern: ^[0-9a-f-]{36}$
+  metadata_source_service:
+    type: string
+    required: true
+    enum:
+    - week3-document-refinery
+    - week1-intent-correlator
+    - week5-event-platform
+  schema_version:
+    type: string
+    required: true
+    enum:
+    - '1.0'
+  occurred_at:
+    type: string
+    required: true
+    format: date-time
+  recorded_at:
+    type: string
+    required: true
+    format: date-time
+quality:
+  type: SodaChecks
+  specification:
+    checks:
+    - missing_count(event_id) = 0
+    - duplicate_count(event_id) = 0
+    - missing_count(event_type) = 0
+    - missing_count(aggregate_id) = 0
+    - duplicate_count(aggregate_id) = 0
+    - missing_count(aggregate_type) = 0
+    - missing_count(sequence_number) = 0
+    - missing_count(payload_detail) = 0
+    - missing_count(payload_processed_items) = 0
+    - missing_count(metadata_correlation_id) = 0
+    - duplicate_count(metadata_correlation_id) = 0
+    - missing_count(metadata_user_id) = 0
+    - duplicate_count(metadata_user_id) = 0
+    - missing_count(metadata_source_service) = 0
+    - missing_count(schema_version) = 0
+    - missing_count(occurred_at) = 0
+    - missing_count(recorded_at) = 0
+    - row_count >= 1
+lineage:
+  upstream: []
+  downstream:
+  - id: service::week3-refinery
+    description: service::week3-refinery consumes data from table::extractions
+    fields_consumed:
+    - doc_id
+    - extracted_facts
+  - id: external::langsmith
+    description: external::langsmith consumes data from pipeline::extraction-pipeline
+    fields_consumed:
+    - doc_id
+    - extracted_facts
+  - id: service::week5-event-platform
+    description: service::week5-event-platform consumes data from table::events
+    fields_consumed:
+    - doc_id
+    - extracted_facts
+  - id: pipeline::event-pipeline
+    description: pipeline::event-pipeline consumes data from service::week5-event-platform
+    fields_consumed:
+    - doc_id
+    - extracted_facts
