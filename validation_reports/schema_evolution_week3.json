@@ -1,0 +1,45 @@
+{
+  "report_id": "f708e4bf-97cb-4504-8b35-85b2800b6d2a",
+  "contract_id": "week3-document-refinery-extractions",
+  "generated_at": "2026-04-01T19:33:55.433652+00:00",
+  "snapshot_old": "20260401_192140.yaml",
+  "snapshot_new": "20260401_193246.yaml",
+  "overall_verdict": "BREAKING",
+  "total_changes": 1,
+  "breaking_changes": 1,
+  "compatible_changes": 0,
+  "changes": [
+    {
+      "field": "extracted_facts_confidence",
+      "verdict": "BREAKING",
+      "change_type": "type_narrowing, range_change",
+      "description": "Type changed from number to integer. CRITICAL \u2014 requires migration plan with rollback.; Maximum changed from 1.0 to 100. Statistical baseline must be re-established.",
+      "old_value": {
+        "type": "number",
+        "required": false,
+        "minimum": 0.0,
+        "maximum": 1.0,
+        "description": "Confidence score. Must remain 0.0-1.0 float. BREAKING if changed to 0-100."
+      },
+      "new_value": {
+        "type": "integer",
+        "required": false,
+        "minimum": 0,
+        "maximum": 100,
+        "description": "Confidence score as percentage 0-100."
+      }
+    }
+  ],
+  "migration_checklist": [
+    "1. Update all producers to handle 'extracted_facts_confidence': Type changed from number to integer. CRITICAL \u2014 requires migration plan with rollback.; Maximum changed from 1.0 to 100. Statistical baseline must be re-established."
+  ],
+  "rollback_plan": [
+    "1. Revert 'extracted_facts_confidence' to previous schema: {\"type\": \"number\", \"required\": false, \"minimum\": 0.0, \"maximum\": 1.0, \"description\": \"Confidence score. Must remain 0.0-1.0 float. BREAKING if changed to 0-100.\"}"
+  ],
+  "per_consumer_failure_analysis": [
+    {
+      "field": "extracted_facts_confidence",
+      "failure_mode": "Consumer reads 'extracted_facts_confidence' with old schema. After change: Type changed from number to integer. CRITICAL \u2014 requires migration plan with rollback.; Maximum changed from 1.0 to 100. Statistical baseline must be re-established."
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "written_at": "2026-04-01T19:26:22.478392+00:00",
+  "columns": {
+    "processing_time_ms": {
+      "mean": 1948.463895,
+      "stddev": 1014.535013
+    },
+    "token_count_input": {
+      "mean": 4828.824945,
+      "stddev": 1589.166846
+    },
+    "token_count_output": {
+      "mean": 1116.809628,
+      "stddev": 475.022041
+    },
+    "extracted_facts_confidence": {
+      "mean": 0.768327,
+      "stddev": 0.124102
+    },
+    "extracted_facts_page_ref": {
+      "mean": 10.674074,
+      "stddev": 5.870276
+    }
+  }
+}

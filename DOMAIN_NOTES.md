@@ -119,11 +119,13 @@ Stop at the first external boundary or when distance exceeds 5 hops. Collect all
 ### Step 5: Git Blame on Upstream Files
 
 For each upstream file, run:
+
 ```
 git log --follow --since="14 days ago" --format='%H|%ae|%ai|%s' -- src/extractor.py
 ```
 
 This returns recent commits that modified the file. For line-level precision:
+
 ```
 git blame -L 42,67 --porcelain src/extractor.py
 ```
@@ -131,6 +133,7 @@ git blame -L 42,67 --porcelain src/extractor.py
 ### Step 6: Score and Rank Candidates
 
 For each commit, compute a confidence score:
+
 ```
 score = max(0.0, 1.0 - (days_since_commit * 0.1) - (lineage_distance * 0.2))
 ```
@@ -140,6 +143,7 @@ A commit from 2 days ago at distance 1 scores `1.0 - 0.2 - 0.2 = 0.6`. A commit 
 ### Step 7: Compute Blast Radius
 
 From the contract YAML's `lineage.downstream[]` section, enumerate all consumers:
+
 ```json
 {
   "affected_nodes": ["file::src/week4/cartographer.py"],
@@ -279,7 +283,8 @@ lineage:
   downstream:
     - id: week7-ai-contract-extensions
       description: AI extensions validate trace schema and monitor drift
-      fields_consumed: [run_type, total_tokens, prompt_tokens, completion_tokens, total_cost]
+      fields_consumed:
+        [run_type, total_tokens, prompt_tokens, completion_tokens, total_cost]
       breaking_if_changed: [total_tokens, run_type, total_cost]
 ```
 

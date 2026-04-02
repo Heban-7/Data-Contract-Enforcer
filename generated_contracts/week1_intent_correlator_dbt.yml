@@ -1,0 +1,41 @@
+version: 2
+models:
+- name: week1_intent_correlator
+  description: Contract generated from outputs/week1/intent_records.jsonl. Covers
+    9 fields.
+  columns:
+  - name: intent_id
+    tests:
+    - not_null
+    - unique
+  - name: description
+    tests:
+    - not_null
+    - accepted_values:
+        values:
+        - Extract named entities from uploaded PDF documents
+        - Route incoming events to appropriate handlers
+        - Transform raw CSV data into normalized schema
+        - Validate user authentication tokens before processing
+        - Generate summary report from extracted facts
+  - name: governance_tags
+    tests:
+    - not_null
+  - name: created_at
+    tests:
+    - not_null
+  - name: code_refs_file
+    tests:
+    - not_null
+  - name: code_refs_line_start
+    tests:
+    - not_null
+  - name: code_refs_line_end
+    tests:
+    - not_null
+  - name: code_refs_symbol
+    tests:
+    - not_null
+  - name: code_refs_confidence
+    tests:
+    - not_null

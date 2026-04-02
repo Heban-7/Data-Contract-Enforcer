@@ -1,0 +1,67 @@
+version: 2
+models:
+- name: langsmith_trace_records
+  description: Contract generated from outputs/traces/runs.jsonl. Covers 15 fields.
+  columns:
+  - name: id
+    tests:
+    - not_null
+    - unique
+  - name: name
+    tests:
+    - not_null
+  - name: run_type
+    tests:
+    - not_null
+    - accepted_values:
+        values:
+        - tool
+        - retriever
+        - chain
+        - llm
+        - embedding
+  - name: inputs_query
+    tests:
+    - not_null
+  - name: outputs_result
+    tests:
+    - not_null
+    - accepted_values:
+        values:
+        - Processed successfully
+  - name: error
+    tests:
+    - accepted_values:
+        values:
+        - 'TimeoutError: LLM call exceeded 30s'
+  - name: start_time
+    tests:
+    - not_null
+  - name: end_time
+    tests:
+    - not_null
+  - name: total_tokens
+    tests:
+    - not_null
+  - name: prompt_tokens
+    tests:
+    - not_null
+  - name: completion_tokens
+    tests:
+    - not_null
+  - name: total_cost
+    tests:
+    - not_null
+  - name: tags
+    tests:
+    - not_null
+  - name: parent_run_id
+    tests:
+    - unique
+  - name: session_id
+    tests:
+    - not_null
+    - unique
+    - accepted_values:
+        values:
+        - 7e7a68fd-dbf3-4072-ade2-c457bdc3b251

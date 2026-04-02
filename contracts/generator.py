@@ -79,12 +79,22 @@ def flatten_for_profile(records: list[dict]) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def profile_column(series: pd.Series, col_name: str) -> dict:
+    has_unhashable = False
+    try:
+        nunique = int(series.nunique())
+        sample_vals = [str(v) for v in series.dropna().unique()[:5]]
+    except TypeError:
+        has_unhashable = True
+        str_series = series.apply(lambda x: json.dumps(x, default=str) if isinstance(x, (list, dict)) else x)
+        nunique = int(str_series.nunique())
+        sample_vals = [str(v) for v in str_series.dropna().unique()[:5]]
+
     result = {
         "name": col_name,
         "dtype": str(series.dtype),
         "null_fraction": round(float(series.isna().mean()), 4),
-        "cardinality_estimate": int(series.nunique()),
-        "sample_values": [str(v) for v in series.dropna().unique()[:5]],
+        "cardinality_estimate": nunique,
+        "sample_values": sample_vals,
     }
     if pd.api.types.is_numeric_dtype(series):
         s = series.dropna()

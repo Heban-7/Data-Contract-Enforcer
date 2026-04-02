@@ -1,0 +1,135 @@
+kind: DataContract
+apiVersion: v3.0.0
+id: langsmith-trace-records
+info:
+  title: Auto-generated contract for langsmith-trace-records
+  version: 1.0.0
+  owner: data-engineering-team
+  description: Contract generated from outputs/traces/runs.jsonl. Covers 15 fields.
+servers:
+  local:
+    type: local
+    path: outputs/traces/runs.jsonl
+    format: jsonl
+terms:
+  usage: Internal inter-system data contract. Do not publish.
+  limitations: confidence must remain in 0.0-1.0 float range.
+schema:
+  id:
+    type: string
+    required: true
+    format: uuid
+    pattern: ^[0-9a-f-]{36}$
+  name:
+    type: string
+    required: true
+  run_type:
+    type: string
+    required: true
+    enum:
+    - tool
+    - retriever
+    - chain
+    - llm
+    - embedding
+  inputs_query:
+    type: string
+    required: true
+  outputs_result:
+    type: string
+    required: true
+    enum:
+    - Processed successfully
+  error:
+    type: string
+    required: false
+    enum:
+    - 'TimeoutError: LLM call exceeded 30s'
+  start_time:
+    type: string
+    required: true
+    format: date-time
+  end_time:
+    type: string
+    required: true
+    format: date-time
+  total_tokens:
+    type: integer
+    required: true
+    minimum: 1666.0
+    maximum: 8761.0
+  prompt_tokens:
+    type: integer
+    required: true
+    minimum: 1039.0
+    maximum: 7930.0
+  completion_tokens:
+    type: integer
+    required: true
+    minimum: 226.0
+    maximum: 1943.0
+  total_cost:
+    type: number
+    required: true
+    minimum: 0.005
+    maximum: 0.0263
+  tags:
+    type: string
+    required: true
+  parent_run_id:
+    type: string
+    required: false
+    format: uuid
+    pattern: ^[0-9a-f-]{36}$
+  session_id:
+    type: string
+    required: true
+    format: uuid
+    pattern: ^[0-9a-f-]{36}$
+    enum:
+    - 7e7a68fd-dbf3-4072-ade2-c457bdc3b251
+quality:
+  type: SodaChecks
+  specification:
+    checks:
+    - missing_count(id) = 0
+    - duplicate_count(id) = 0
+    - missing_count(name) = 0
+    - missing_count(run_type) = 0
+    - missing_count(inputs_query) = 0
+    - missing_count(outputs_result) = 0
+    - missing_count(start_time) = 0
+    - missing_count(end_time) = 0
+    - missing_count(total_tokens) = 0
+    - missing_count(prompt_tokens) = 0
+    - missing_count(completion_tokens) = 0
+    - missing_count(total_cost) = 0
+    - min(total_cost) >= 0.005
+    - max(total_cost) <= 0.0263
+    - missing_count(tags) = 0
+    - missing_count(session_id) = 0
+    - duplicate_count(session_id) = 0
+    - row_count >= 1
+lineage:
+  upstream: []
+  downstream:
+  - id: service::week3-refinery
+    description: service::week3-refinery consumes data from table::extractions
+    fields_consumed:
+    - doc_id
+    - extracted_facts
+  - id: external::langsmith
+    description: external::langsmith consumes data from pipeline::extraction-pipeline
+    fields_consumed:
+    - doc_id
+    - extracted_facts
+  - id: service::week5-event-platform
+    description: service::week5-event-platform consumes data from table::events
+    fields_consumed:
+    - doc_id
+    - extracted_facts
+  - id: pipeline::event-pipeline
+    description: pipeline::event-pipeline consumes data from service::week5-event-platform
+    fields_consumed:
+    - doc_id
+    - extracted_facts

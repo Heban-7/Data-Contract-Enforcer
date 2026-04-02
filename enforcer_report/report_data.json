@@ -1,0 +1,48 @@
+{
+  "generated_at": "2026-04-01T19:34:26.522478+00:00",
+  "period": "2026-03-25 to 2026-04-01",
+  "data_health_score": 50,
+  "health_narrative": "Data health score of 50/100. 2 critical issue(s) require immediate action. Data quality is degraded.",
+  "violations_summary": {
+    "total": 3,
+    "by_severity": {
+      "CRITICAL": 2,
+      "HIGH": 1,
+      "MEDIUM": 0,
+      "LOW": 0
+    },
+    "top_violations": [
+      "The entities_type field in week3-document-refinery-extractions failed its enum check. Expected one of ['PERSON', 'AMOUNT', 'ORG', 'LOCATION', 'DATE'] but found 2 non-conforming values: ['INSTITUTION']. This affects 2 records.",
+      "The extracted_facts_confidence field in week3-document-refinery-extractions failed its range check. Expected max<=1.0, min>=0.0 but found max=98.0, mean=76.8. This affects 251 records.",
+      "The extracted_facts_confidence field in week3-document-refinery-extractions failed its statistical_drift check. Expected mean=0.7683 +/- 3*0.1241 but found mean=76.8327, z=612.92. This affects 0 records."
+    ]
+  },
+  "schema_changes": [
+    {
+      "contract_id": "week3-document-refinery-extractions",
+      "verdict": "BREAKING",
+      "total_changes": 1,
+      "breaking_changes": 1
+    }
+  ],
+  "ai_system_risk_assessment": {
+    "embedding_drift": {
+      "status": "PASS",
+      "drift_score": 0.0
+    },
+    "prompt_input_validation": {
+      "status": "PASS"
+    },
+    "llm_output_schema": {
+      "status": "PASS",
+      "violation_rate": 0.0
+    }
+  },
+  "violation_log_count": 3,
+  "recommendations": [
+    "Fix entities_type in week3-document-refinery-extractions: entities_type has 2 values not in allowed enum.",
+    "Fix extracted_facts_confidence in week3-document-refinery-extractions: extracted_facts_confidence is in 55.0-98.0 range, not 0.0-1.0. Breaking change detected.",
+    "Investigate extracted_facts_confidence in week3-document-refinery-extractions: extracted_facts_confidence mean drifted 612.9 stddev from baseline."
+  ],
+  "validation_reports_analyzed": 3
+}
