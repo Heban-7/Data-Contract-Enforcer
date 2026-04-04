@@ -7,7 +7,8 @@ Usage:
     python contracts/runner.py \
         --contract generated_contracts/week3_document_refinery_extractions.yaml \
         --data outputs/week3/extractions.jsonl \
-        --output validation_reports/week3_run.json
+        --output validation_reports/week3_run.json \
+        --mode AUDIT
 """
 
 import argparse
@@ -15,11 +16,19 @@ import json
 import uuid
 import hashlib
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 import yaml
+
+SEVERITY_ORDER = {
+    "LOW": 1,
+    "MEDIUM": 2,
+    "HIGH": 3,
+    "CRITICAL": 4,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +343,7 @@ def check_range(df: pd.DataFrame, col_name: str, minimum: float,
             "check_id": f"{contract_id}.{col_name}.range",
             "column_name": col_name,
             "check_type": "range",
+            "detection_path": "contract_range",
             "status": "ERROR",
             "actual_value": "column not found",
             "expected": f"min>={minimum}, max<={maximum}",
@@ -348,6 +358,7 @@ def check_range(df: pd.DataFrame, col_name: str, minimum: float,
             "check_id": f"{contract_id}.{col_name}.range",
             "column_name": col_name,
             "check_type": "range",
+            "detection_path": "contract_range",
             "status": "ERROR",
             "actual_value": f"dtype={df[col_name].dtype}",
             "expected": f"numeric, min>={minimum}, max<={maximum}",
@@ -379,6 +390,7 @@ def check_range(df: pd.DataFrame, col_name: str, minimum: float,
             "check_id": f"{contract_id}.{col_name}.range",
             "column_name": col_name,
             "check_type": "range",
+            "detection_path": "contract_range",
             "status": "FAIL",
             "actual_value": f"max={data_max}, mean={round(data_mean, 1)}",
             "expected": f"max<={maximum}, min>={minimum}",
@@ -395,6 +407,7 @@ def check_range(df: pd.DataFrame, col_name: str, minimum: float,
         "check_id": f"{contract_id}.{col_name}.range",
         "column_name": col_name,
         "check_type": "range",
+        "detection_path": "contract_range",
         "status": "PASS",
         "actual_value": f"min={data_min}, max={data_max}",
         "expected": f"min>={minimum}, max<={maximum}",
@@ -431,6 +444,7 @@ def check_statistical_drift(col_name: str, current_mean: float,
         "check_id": f"{contract_id}.{col_name}.statistical_drift",
         "column_name": col_name,
         "check_type": "statistical_drift",
+        "detection_path": "statistical_drift",
         "status": status,
         "actual_value": f"mean={round(current_mean, 4)}, z={round(z_score, 2)}",
         "expected": f"mean={round(b['mean'], 4)} +/- 3*{round(baseline_std, 4)}",
@@ -473,16 +487,9 @@ def write_baselines(df: pd.DataFrame,
 # Main validation pipeline
 # ---------------------------------------------------------------------------
 
-def run_validation(contract_path: str, data_path: str) -> dict:
-    with open(contract_path, encoding="utf-8") as f:
-        contract = yaml.safe_load(f)
-
-    records = load_jsonl(data_path)
-    df = flatten_for_profile(records)
-
-    contract_id = contract.get("id", "unknown")
-    results = []
-
+def run_contract_checks(df: pd.DataFrame, contract: dict, contract_id: str) -> list[dict]:
+    """Run structural + contract-clause checks (including explicit range checks)."""
+    results: list[dict] = []
     schema = contract.get("schema", {})
     for col_name, clause in schema.items():
         try:
@@ -501,10 +508,21 @@ def run_validation(contract_path: str, data_path: str) -> dict:
             if clause.get("format") == "date-time":
                 results.append(check_datetime(df, col_name, contract_id))
 
-            if "minimum" in clause and "maximum" in clause and clause.get("type") in ("number", "integer"):
-                results.append(check_range(
-                    df, col_name, clause["minimum"], clause["maximum"], contract_id
-                ))
+            # This path is contract-clause based and remains independent of drift checks.
+            if (
+                "minimum" in clause
+                and "maximum" in clause
+                and clause.get("type") in ("number", "integer")
+            ):
+                results.append(
+                    check_range(
+                        df,
+                        col_name,
+                        clause["minimum"],
+                        clause["maximum"],
+                        contract_id,
+                    )
+                )
         except Exception as e:
             results.append({
                 "check_id": f"{contract_id}.{col_name}.error",
@@ -518,16 +536,70 @@ def run_validation(contract_path: str, data_path: str) -> dict:
                 "sample_failing": [],
                 "message": f"Check failed with error: {e}",
             })
+    return results
 
-    baselines = load_baselines()
+
+def run_drift_checks(
+    df: pd.DataFrame, contract_id: str, baselines: dict
+) -> list[dict]:
+    """Run statistical drift checks through a dedicated execution path."""
+    drift_results: list[dict] = []
     for col in df.select_dtypes(include="number").columns:
         s = df[col].dropna()
-        if len(s) > 0:
-            drift_result = check_statistical_drift(
-                col, float(s.mean()), float(s.std()), baselines, contract_id
-            )
-            if drift_result:
-                results.append(drift_result)
+        if len(s) == 0:
+            continue
+        drift_result = check_statistical_drift(
+            col, float(s.mean()), float(s.std()), baselines, contract_id
+        )
+        if drift_result:
+            drift_results.append(drift_result)
+    return drift_results
+
+
+def should_block(
+    results: list[dict], mode: str, warn_block_severity: str
+) -> tuple[bool, str]:
+    """
+    Decide blocking behavior by execution mode.
+    - AUDIT: never blocks
+    - WARN: blocks only FAIL/ERROR at or above warn_block_severity
+    - ENFORCE: blocks on any FAIL or ERROR
+    """
+    mode = mode.upper()
+    if mode == "AUDIT":
+        return False, "AUDIT mode never blocks"
+
+    failures = [r for r in results if r.get("status") in ("FAIL", "ERROR")]
+    if mode == "ENFORCE":
+        if failures:
+            return True, "ENFORCE blocks on any FAIL/ERROR"
+        return False, "No FAIL/ERROR checks in ENFORCE mode"
+
+    # WARN mode
+    threshold = warn_block_severity.upper()
+    threshold_value = SEVERITY_ORDER.get(threshold, SEVERITY_ORDER["HIGH"])
+    for r in failures:
+        sev = r.get("severity", "LOW")
+        if SEVERITY_ORDER.get(sev, 1) >= threshold_value:
+            return True, f"WARN blocks on FAIL/ERROR at {threshold}+ severity"
+    return False, f"WARN mode found no FAIL/ERROR at {threshold}+ severity"
+
+
+def run_validation(
+    contract_path: str, data_path: str, mode: str, warn_block_severity: str
+) -> dict:
+    with open(contract_path, encoding="utf-8") as f:
+        contract = yaml.safe_load(f)
+
+    records = load_jsonl(data_path)
+    df = flatten_for_profile(records)
+
+    contract_id = contract.get("id", "unknown")
+    contract_results = run_contract_checks(df, contract, contract_id)
+
+    baselines = load_baselines()
+    drift_results = run_drift_checks(df, contract_id, baselines)
+    results = contract_results + drift_results
 
     if not baselines.get("columns"):
         write_baselines(df)
@@ -536,13 +608,20 @@ def run_validation(contract_path: str, data_path: str) -> dict:
     failed = sum(1 for r in results if r["status"] == "FAIL")
     warned = sum(1 for r in results if r["status"] == "WARN")
     errored = sum(1 for r in results if r["status"] == "ERROR")
+    blocking, blocking_reason = should_block(results, mode, warn_block_severity)
 
     report = {
         "report_id": str(uuid.uuid4()),
         "contract_id": contract_id,
         "snapshot_id": file_sha256(data_path),
         "run_timestamp": datetime.now(timezone.utc).isoformat(),
+        "mode": mode.upper(),
+        "warn_block_severity": warn_block_severity.upper(),
+        "blocking": blocking,
+        "blocking_reason": blocking_reason,
         "total_checks": len(results),
+        "contract_clause_checks": len(contract_results),
+        "drift_checks": len(drift_results),
         "passed": passed,
         "failed": failed,
         "warned": warned,
@@ -558,13 +637,27 @@ def main():
     parser.add_argument("--contract", required=True, help="Path to contract YAML")
     parser.add_argument("--data", required=True, help="Path to JSONL data file")
     parser.add_argument("--output", required=True, help="Output path for report JSON")
+    parser.add_argument(
+        "--mode",
+        default="AUDIT",
+        choices=["AUDIT", "WARN", "ENFORCE"],
+        help="Execution mode controlling blocking behavior by severity",
+    )
+    parser.add_argument(
+        "--warn-block-severity",
+        default="HIGH",
+        choices=["HIGH", "CRITICAL"],
+        help="WARN mode blocks FAIL/ERROR at this minimum severity",
+    )
     args = parser.parse_args()
 
     print(f"Running validation...")
     print(f"  Contract: {args.contract}")
     print(f"  Data: {args.data}")
 
-    report = run_validation(args.contract, args.data)
+    report = run_validation(
+        args.contract, args.data, args.mode, args.warn_block_severity
+    )
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     with open(args.output, "w", encoding="utf-8") as f:
@@ -576,7 +669,14 @@ def main():
     print(f"  Failed: {report['failed']}")
     print(f"  Warned: {report['warned']}")
     print(f"  Errored: {report['errored']}")
+    print(f"  Mode: {report['mode']}")
+    if report["mode"] == "WARN":
+        print(f"  WARN threshold: {report['warn_block_severity']}")
+    print(f"  Blocking: {report['blocking']} ({report['blocking_reason']})")
     print(f"  Report written to {args.output}")
+
+    if report["blocking"]:
+        sys.exit(2)
 
 
 if __name__ == "__main__":

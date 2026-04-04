@@ -4,38 +4,143 @@
   "subscriptions": [
     {
       "subscription_id": "sub-week1-to-week2-intent-target",
-      "upstream_system": "week1",
-      "downstream_system": "week2",
+      "contract_id": "week1-intent-correlator",
+      "producer_id": "week1",
+      "subscriber_id": "week2",
+      "lineage_node_id": "pipeline::intent-pipeline",
       "fields_consumed": ["intent_id", "code_refs_file", "created_at"],
-      "breaking_fields": ["intent_id", "code_refs_file", "created_at"]
+      "breaking_fields": [
+        {
+          "field": "code_refs_file",
+          "reason": "Week2 target_ref resolution depends on this path."
+        },
+        {
+          "field": "intent_id",
+          "reason": "Correlation and dedup logic require stable IDs."
+        },
+        {
+          "field": "created_at",
+          "reason": "Temporal ranking and ordering are derived from timestamp."
+        }
+      ],
+      "validation_mode": "WARN",
+      "registered_at": "2026-04-04T00:00:00Z",
+      "contact": {
+        "name": "Week2 Digital Courtroom Team",
+        "email": "week2-owner@example.com"
+      }
     },
     {
       "subscription_id": "sub-week3-to-week4-extraction-lineage",
-      "upstream_system": "week3",
-      "downstream_system": "week4",
+      "contract_id": "week3-document-refinery-extractions",
+      "producer_id": "week3",
+      "subscriber_id": "week4",
+      "lineage_node_id": "pipeline::extraction-pipeline",
       "fields_consumed": ["doc_id", "extracted_facts_confidence", "entities_type"],
-      "breaking_fields": ["doc_id", "extracted_facts_confidence", "entities_type"]
+      "breaking_fields": [
+        {
+          "field": "doc_id",
+          "reason": "Lineage node identity is keyed by doc_id."
+        },
+        {
+          "field": "extracted_facts_confidence",
+          "reason": "Confidence scale changes cause silent quality corruption."
+        },
+        {
+          "field": "entities_type",
+          "reason": "Entity enum drives graph typing and downstream analytics."
+        }
+      ],
+      "validation_mode": "ENFORCE",
+      "registered_at": "2026-04-04T00:00:00Z",
+      "contact": {
+        "name": "Week4 Cartographer Team",
+        "email": "week4-owner@example.com"
+      }
     },
     {
       "subscription_id": "sub-week4-to-week7-attribution-lineage",
-      "upstream_system": "week4",
-      "downstream_system": "week7_attributor",
+      "contract_id": "week4-brownfield-cartographer-lineage",
+      "producer_id": "week4",
+      "subscriber_id": "week7_attributor",
+      "lineage_node_id": "external::langsmith",
       "fields_consumed": ["nodes", "edges", "git_commit"],
-      "breaking_fields": ["nodes", "edges", "git_commit"]
+      "breaking_fields": [
+        {
+          "field": "nodes",
+          "reason": "Attribution cannot map violations to producers without nodes."
+        },
+        {
+          "field": "edges",
+          "reason": "Blast radius and blame traversal require edge continuity."
+        },
+        {
+          "field": "git_commit",
+          "reason": "Commit linkage must remain valid for blame evidence."
+        }
+      ],
+      "validation_mode": "ENFORCE",
+      "registered_at": "2026-04-04T00:00:00Z",
+      "contact": {
+        "name": "Week7 Attribution Owner",
+        "email": "week7-attributor@example.com"
+      }
     },
     {
       "subscription_id": "sub-week5-to-week7-validation-events",
-      "upstream_system": "week5",
-      "downstream_system": "week7_runner",
+      "contract_id": "week5-event-records",
+      "producer_id": "week5",
+      "subscriber_id": "week7_runner",
+      "lineage_node_id": "pipeline::event-pipeline",
       "fields_consumed": ["event_type", "payload", "schema_version"],
-      "breaking_fields": ["event_type", "payload", "schema_version"]
+      "breaking_fields": [
+        {
+          "field": "event_type",
+          "reason": "Schema lookup and contract matching key off event_type."
+        },
+        {
+          "field": "payload",
+          "reason": "Primary event content must satisfy registered JSON schema."
+        },
+        {
+          "field": "schema_version",
+          "reason": "Version routing is required for compatibility checks."
+        }
+      ],
+      "validation_mode": "ENFORCE",
+      "registered_at": "2026-04-04T00:00:00Z",
+      "contact": {
+        "name": "Week7 Runner Owner",
+        "email": "week7-runner@example.com"
+      }
     },
     {
       "subscription_id": "sub-week2-to-week7-ai-output",
-      "upstream_system": "week2",
-      "downstream_system": "week7_ai_extensions",
+      "contract_id": "week2-digital-courtroom-verdicts",
+      "producer_id": "week2",
+      "subscriber_id": "week7_ai_extensions",
+      "lineage_node_id": "external::langsmith",
       "fields_consumed": ["overall_verdict", "overall_score", "confidence"],
-      "breaking_fields": ["overall_verdict", "overall_score", "confidence"]
+      "breaking_fields": [
+        {
+          "field": "overall_verdict",
+          "reason": "Output-schema conformance check uses fixed verdict enum."
+        },
+        {
+          "field": "overall_score",
+          "reason": "Risk reporting compares score distributions over time."
+        },
+        {
+          "field": "confidence",
+          "reason": "Confidence bounds are contractually constrained to 0.0-1.0."
+        }
+      ],
+      "validation_mode": "WARN",
+      "registered_at": "2026-04-04T00:00:00Z",
+      "contact": {
+        "name": "Week7 AI Extensions Owner",
+        "email": "week7-ai@example.com"
+      }
     }
   ]
 }

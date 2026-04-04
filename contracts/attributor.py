@@ -42,10 +42,31 @@ def load_subscriptions_registry(path: str) -> list[dict]:
     with open(p, encoding="utf-8") as f:
         data = json.load(f)
     if isinstance(data, dict):
-        return data.get("subscriptions", [])
-    if isinstance(data, list):
-        return data
-    return []
+        entries = data.get("subscriptions", [])
+    elif isinstance(data, list):
+        entries = data
+    else:
+        return []
+
+    required = {
+        "contract_id",
+        "subscriber_id",
+        "fields_consumed",
+        "breaking_fields",
+        "validation_mode",
+        "registered_at",
+        "contact",
+    }
+    normalized = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if not required.issubset(entry.keys()):
+            continue
+        if "producer_id" not in entry:
+            continue
+        normalized.append(entry)
+    return normalized
 
 
 def source_system_from_check_id(check_id: str) -> str:
@@ -213,14 +234,14 @@ def score_candidates(commits: list[dict], violation_timestamp: str,
 # Blast radius
 # ---------------------------------------------------------------------------
 
-def compute_contamination_depth(
+def compute_subscription_depths(
     source_system: str, subscriptions: list[dict]
 ) -> dict[str, int]:
     """BFS over subscriptions graph to estimate dependency-distance contamination."""
     adjacency: dict[str, list[str]] = {}
     for sub in subscriptions:
-        upstream = sub.get("upstream_system")
-        downstream = sub.get("downstream_system")
+        upstream = sub.get("producer_id")
+        downstream = sub.get("subscriber_id")
         if upstream and downstream:
             adjacency.setdefault(upstream, []).append(downstream)
 
@@ -238,37 +259,118 @@ def compute_contamination_depth(
     return depths
 
 
+def _candidate_tokens(value: str) -> list[str]:
+    raw = value.lower().replace("-", "_")
+    parts = [p for p in raw.split("_") if p]
+    return [raw] + parts
+
+
+def _node_matches_identifier(node_id: str, identifier: str) -> bool:
+    n = node_id.lower()
+    return any(tok in n for tok in _candidate_tokens(identifier))
+
+
+def lineage_depth_between(
+    source_system: str, subscriber_id: str, lineage_snapshot: dict
+) -> int | None:
+    """Compute dependency distance via lineage traversal depth."""
+    nodes = [n.get("node_id", "") for n in lineage_snapshot.get("nodes", [])]
+    start_nodes = [n for n in nodes if _node_matches_identifier(n, source_system)]
+    target_nodes = {n for n in nodes if _node_matches_identifier(n, subscriber_id)}
+    if not start_nodes or not target_nodes:
+        return None
+
+    adjacency: dict[str, list[str]] = {}
+    for edge in lineage_snapshot.get("edges", []):
+        src = edge.get("source")
+        tgt = edge.get("target")
+        if src and tgt:
+            adjacency.setdefault(src, []).append(tgt)
+
+    queue = deque()
+    visited = set()
+    for start in start_nodes:
+        queue.append((start, 0))
+        visited.add(start)
+
+    while queue:
+        node, depth = queue.popleft()
+        if node in target_nodes:
+            return depth
+        for nxt in adjacency.get(node, []):
+            if nxt not in visited:
+                visited.add(nxt)
+                queue.append((nxt, depth + 1))
+    return None
+
+
+def _breaking_fields_with_reasons(sub: dict) -> list[dict]:
+    raw = sub.get("breaking_fields", [])
+    out: list[dict] = []
+    for item in raw:
+        if isinstance(item, dict) and item.get("field"):
+            out.append({"field": item["field"], "reason": item.get("reason", "")})
+        elif isinstance(item, str):
+            out.append({"field": item, "reason": ""})
+    return out
+
+
 def compute_blast_radius(
     contract_path: str,
     records_failing: int,
     check_id: str,
     subscriptions: list[dict],
+    lineage_snapshot: dict,
 ) -> dict:
     """Compute blast radius from subscriptions registry (fallback to contract lineage)."""
     source_system = source_system_from_check_id(check_id)
     failing_field = field_from_check_id(check_id)
-    contamination_depth = compute_contamination_depth(source_system, subscriptions)
+    subscription_depths = compute_subscription_depths(source_system, subscriptions)
 
     affected_links = []
     affected_nodes: set[str] = set()
     for sub in subscriptions:
-        if sub.get("upstream_system") != source_system:
+        if sub.get("producer_id") != source_system:
             continue
-        breaking_fields = sub.get("breaking_fields", [])
+        breaking_fields = _breaking_fields_with_reasons(sub)
         fields_consumed = sub.get("fields_consumed", [])
-        if breaking_fields and failing_field not in breaking_fields and "*" not in breaking_fields:
+        breaking_field_names = [bf.get("field", "") for bf in breaking_fields]
+        if (
+            breaking_field_names
+            and failing_field not in breaking_field_names
+            and "*" not in breaking_field_names
+        ):
             continue
-        downstream = sub.get("downstream_system", "")
+        downstream = sub.get("subscriber_id", "")
         if downstream:
             affected_nodes.add(downstream)
+        lineage_target = sub.get("lineage_node_id", downstream)
+        lineage_depth = lineage_depth_between(
+            source_system, lineage_target, lineage_snapshot
+        )
+        contamination_depth = (
+            lineage_depth
+            if lineage_depth is not None
+            else subscription_depths.get(downstream, 1)
+        )
         affected_links.append(
             {
                 "subscription_id": sub.get("subscription_id"),
-                "upstream_system": source_system,
-                "downstream_system": downstream,
+                "contract_id": sub.get("contract_id"),
+                "producer_id": source_system,
+                "subscriber_id": downstream,
+                "lineage_node_id": lineage_target,
                 "fields_consumed": fields_consumed,
                 "breaking_fields": breaking_fields,
-                "contamination_depth": contamination_depth.get(downstream, 1),
+                "validation_mode": sub.get("validation_mode"),
+                "registered_at": sub.get("registered_at"),
+                "contact": sub.get("contact"),
+                "contamination_depth": contamination_depth,
+                "depth_source": (
+                    "lineage_traversal"
+                    if lineage_depth is not None
+                    else "subscription_graph"
+                ),
             }
         )
 
@@ -285,6 +387,10 @@ def compute_blast_radius(
         except (FileNotFoundError, yaml.YAMLError):
             pass
 
+    contamination_depth = {
+        item["subscriber_id"]: item["contamination_depth"]
+        for item in affected_links
+    }
     affected_pipelines = [n for n in affected_nodes if "pipeline" in n.lower()]
     max_depth = max(contamination_depth.values()) if contamination_depth else 0
     return {
@@ -374,6 +480,7 @@ def attribute_violations(violation_report_path: str, lineage_path: str,
             records_failing=failure.get("records_failing", 0),
             check_id=check_id,
             subscriptions=subscriptions,
+            lineage_snapshot=lineage,
         )
 
         violation_records.append({
