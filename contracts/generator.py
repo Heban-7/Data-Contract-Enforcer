@@ -16,9 +16,6 @@ import argparse
 import json
 import os
 import shutil
-import uuid
-import hashlib
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -433,6 +430,12 @@ def build_contract(contract_id: str, source_path: str,
         },
         "profiling_warnings": [],
         "llm_annotations": llm_annotations,
+        "profiling": {
+            "inferred_from": source_path,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "record_count": 0,
+            "column_profiles": column_profiles,
+        },
     }
 
     for col_name, profile in column_profiles.items():
@@ -566,6 +569,30 @@ def main():
         default="gpt-4o-mini",
         help="LLM model used for annotations when --enable-llm is set",
     )
+    parser.add_argument(
+        "--include-lineage",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include lineage context in generated contract",
+    )
+    parser.add_argument(
+        "--write-dbt",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Write dbt schema.yml annotation output",
+    )
+    parser.add_argument(
+        "--write-baselines",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Write numeric profiling baselines to schema_snapshots/baselines.json",
+    )
+    parser.add_argument(
+        "--write-snapshot",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Write timestamped contract snapshot to schema_snapshots/<contract_id>/",
+    )
     args = parser.parse_args()
 
     print(f"Loading data from {args.source}...")
@@ -600,10 +627,14 @@ def main():
         suspicious_warnings,
         llm_annotations,
     )
+    contract["profiling"]["record_count"] = len(records)
 
-    print("Injecting lineage context...")
-    lineage = load_lineage(args.lineage)
-    contract = inject_lineage(contract, lineage, args.contract_id)
+    if args.include_lineage:
+        print("Injecting lineage context...")
+        lineage = load_lineage(args.lineage)
+        contract = inject_lineage(contract, lineage, args.contract_id)
+    else:
+        contract["lineage"] = {"upstream": [], "downstream": []}
 
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -627,14 +658,18 @@ def main():
                   allow_unicode=True)
     print(f"  Contract written to {contract_path}")
 
-    dbt_filename = contract_filename.replace(".yaml", "_dbt.yml")
-    dbt_path = output_dir / dbt_filename
-    generate_dbt_schema(contract, dbt_path)
-    print(f"  dbt schema written to {dbt_path}")
+    if args.write_dbt:
+        dbt_filename = contract_filename.replace(".yaml", "_dbt.yml")
+        dbt_path = output_dir / dbt_filename
+        generate_dbt_schema(contract, dbt_path)
+        print(f"  dbt schema written to {dbt_path}")
 
-    write_generation_baselines(args.contract_id, column_profiles)
-    print("  Generation baselines written to schema_snapshots/baselines.json")
-    write_snapshot(contract_path, args.contract_id)
+    if args.write_baselines:
+        write_generation_baselines(args.contract_id, column_profiles)
+        print("  Generation baselines written to schema_snapshots/baselines.json")
+
+    if args.write_snapshot:
+        write_snapshot(contract_path, args.contract_id)
 
     total_clauses = len(contract.get("schema", {}))
     print(f"\nContract generation complete: {total_clauses} schema clauses, "

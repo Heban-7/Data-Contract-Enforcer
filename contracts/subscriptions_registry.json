@@ -1,6 +1,12 @@
 {
   "version": "1.0.0",
   "generated_at": "2026-04-04T00:00:00Z",
+  "required_coverage": {
+    "week1_to_week2": "sub-week1-to-week2-intent-target",
+    "week3_to_week4": "sub-week3-to-week4-extraction-lineage",
+    "week4_to_week7_attributor": "sub-week4-to-week7-attribution-lineage",
+    "week5_to_week7_runner": "sub-week5-to-week7-validation-events"
+  },
   "subscriptions": [
     {
       "subscription_id": "sub-week1-to-week2-intent-target",
