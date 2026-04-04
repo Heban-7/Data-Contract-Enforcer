@@ -16,7 +16,7 @@ import json
 import subprocess
 import uuid
 from collections import deque
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -32,6 +32,33 @@ def load_lineage(path: str) -> dict:
     if not lines:
         raise ValueError(f"No lineage snapshots found in {path}")
     return json.loads(lines[-1])
+
+
+def load_subscriptions_registry(path: str) -> list[dict]:
+    """Load producer->consumer subscriptions with field-level dependencies."""
+    p = Path(path)
+    if not p.exists():
+        return []
+    with open(p, encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, dict):
+        return data.get("subscriptions", [])
+    if isinstance(data, list):
+        return data
+    return []
+
+
+def source_system_from_check_id(check_id: str) -> str:
+    # week3-document-refinery-extractions.field.range -> week3
+    root = check_id.split(".", 1)[0]
+    return root.split("-", 1)[0]
+
+
+def field_from_check_id(check_id: str) -> str:
+    parts = check_id.split(".")
+    if len(parts) >= 2:
+        return parts[1]
+    return ""
 
 
 def find_upstream_files(failing_check_id: str, lineage_snapshot: dict) -> list[dict]:
@@ -160,7 +187,7 @@ def score_candidates(commits: list[dict], violation_timestamp: str,
         v_time = datetime.now(timezone.utc)
 
     scored = []
-    for rank, commit in enumerate(commits[:5], start=1):
+    for commit in commits[:5]:
         try:
             ts_str = commit["commit_timestamp"]
             ts_str = ts_str.replace(" +", "+").replace(" -", "-")
@@ -174,39 +201,98 @@ def score_candidates(commits: list[dict], violation_timestamp: str,
         score = max(0.0, 1.0 - (days_diff * 0.1) - (lineage_distance * 0.2))
         scored.append({
             **commit,
-            "rank": rank,
             "confidence_score": round(score, 3),
         })
-
-    return sorted(scored, key=lambda x: x["confidence_score"], reverse=True)
+    scored = sorted(scored, key=lambda x: x["confidence_score"], reverse=True)
+    for i, item in enumerate(scored, start=1):
+        item["rank"] = i
+    return scored
 
 
 # ---------------------------------------------------------------------------
 # Blast radius
 # ---------------------------------------------------------------------------
 
-def compute_blast_radius(contract_path: str, records_failing: int) -> dict:
-    """Compute the blast radius from the contract's lineage downstream."""
-    try:
-        with open(contract_path, encoding="utf-8") as f:
-            contract = yaml.safe_load(f)
-    except (FileNotFoundError, yaml.YAMLError):
-        return {
-            "affected_nodes": [],
-            "affected_pipelines": [],
-            "estimated_records": records_failing,
-        }
+def compute_contamination_depth(
+    source_system: str, subscriptions: list[dict]
+) -> dict[str, int]:
+    """BFS over subscriptions graph to estimate dependency-distance contamination."""
+    adjacency: dict[str, list[str]] = {}
+    for sub in subscriptions:
+        upstream = sub.get("upstream_system")
+        downstream = sub.get("downstream_system")
+        if upstream and downstream:
+            adjacency.setdefault(upstream, []).append(downstream)
 
-    downstream = contract.get("lineage", {}).get("downstream", [])
-    affected_nodes = [d["id"] for d in downstream]
-    affected_pipelines = [
-        d["id"] for d in downstream
-        if "pipeline" in d["id"].lower()
-    ]
+    depths: dict[str, int] = {}
+    queue = deque([(source_system, 0)])
+    visited = {source_system}
+    while queue:
+        current, depth = queue.popleft()
+        for nxt in adjacency.get(current, []):
+            if nxt in visited:
+                continue
+            visited.add(nxt)
+            depths[nxt] = depth + 1
+            queue.append((nxt, depth + 1))
+    return depths
 
+
+def compute_blast_radius(
+    contract_path: str,
+    records_failing: int,
+    check_id: str,
+    subscriptions: list[dict],
+) -> dict:
+    """Compute blast radius from subscriptions registry (fallback to contract lineage)."""
+    source_system = source_system_from_check_id(check_id)
+    failing_field = field_from_check_id(check_id)
+    contamination_depth = compute_contamination_depth(source_system, subscriptions)
+
+    affected_links = []
+    affected_nodes: set[str] = set()
+    for sub in subscriptions:
+        if sub.get("upstream_system") != source_system:
+            continue
+        breaking_fields = sub.get("breaking_fields", [])
+        fields_consumed = sub.get("fields_consumed", [])
+        if breaking_fields and failing_field not in breaking_fields and "*" not in breaking_fields:
+            continue
+        downstream = sub.get("downstream_system", "")
+        if downstream:
+            affected_nodes.add(downstream)
+        affected_links.append(
+            {
+                "subscription_id": sub.get("subscription_id"),
+                "upstream_system": source_system,
+                "downstream_system": downstream,
+                "fields_consumed": fields_consumed,
+                "breaking_fields": breaking_fields,
+                "contamination_depth": contamination_depth.get(downstream, 1),
+            }
+        )
+
+    # Fallback for older contracts that don't yet have a subscriptions file.
+    if not affected_nodes:
+        try:
+            with open(contract_path, encoding="utf-8") as f:
+                contract = yaml.safe_load(f)
+            downstream = contract.get("lineage", {}).get("downstream", [])
+            for item in downstream:
+                node_id = item.get("id", "")
+                if node_id:
+                    affected_nodes.add(node_id)
+        except (FileNotFoundError, yaml.YAMLError):
+            pass
+
+    affected_pipelines = [n for n in affected_nodes if "pipeline" in n.lower()]
+    max_depth = max(contamination_depth.values()) if contamination_depth else 0
     return {
-        "affected_nodes": affected_nodes,
-        "affected_pipelines": affected_pipelines,
+        "affected_nodes": sorted(affected_nodes),
+        "affected_pipelines": sorted(affected_pipelines),
+        "affected_links": affected_links,
+        "contamination_depth": contamination_depth,
+        "max_contamination_depth": max_depth,
         "estimated_records": records_failing,
     }
 
@@ -216,10 +302,12 @@ def compute_blast_radius(contract_path: str, records_failing: int) -> dict:
 # ---------------------------------------------------------------------------
 
 def attribute_violations(violation_report_path: str, lineage_path: str,
-                         contract_path: str) -> list[dict]:
+                         contract_path: str,
+                         subscriptions_path: str) -> list[dict]:
     with open(violation_report_path, encoding="utf-8") as f:
         report = json.load(f)
 
+    subscriptions = load_subscriptions_registry(subscriptions_path)
     lineage = load_lineage(lineage_path)
 
     failures = [
@@ -282,7 +370,10 @@ def attribute_violations(violation_report_path: str, lineage_path: str,
             })
 
         blast_radius = compute_blast_radius(
-            contract_path, failure.get("records_failing", 0)
+            contract_path=contract_path,
+            records_failing=failure.get("records_failing", 0),
+            check_id=check_id,
+            subscriptions=subscriptions,
         )
 
         violation_records.append({
@@ -310,6 +401,11 @@ def main():
                         help="Path to contract YAML")
     parser.add_argument("--output", required=True,
                         help="Output path for violation log JSONL")
+    parser.add_argument(
+        "--subscriptions",
+        default="contracts/subscriptions_registry.json",
+        help="Path to subscriptions registry JSON",
+    )
     args = parser.parse_args()
 
     print(f"Attributing violations...")
@@ -317,7 +413,7 @@ def main():
     print(f"  Lineage: {args.lineage}")
 
     violations = attribute_violations(
-        args.violation, args.lineage, args.contract
+        args.violation, args.lineage, args.contract, args.subscriptions
     )
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)

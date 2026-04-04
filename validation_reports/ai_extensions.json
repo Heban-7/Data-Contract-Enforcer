@@ -1,34 +1,17 @@
 {
-  "run_id": "4ff5e053-45d0-4b43-9317-05da0e78fd4f",
-  "run_timestamp": "2026-04-01T19:34:16.899063+00:00",
+  "run_id": "1a50b53c-4077-4baf-91c7-39bb7af3cf65",
+  "run_timestamp": "2026-04-04T20:12:10.109166+00:00",
   "checks": [
-    {
-      "check": "embedding_drift",
-      "status": "PASS",
-      "drift_score": 0.0,
-      "threshold": 0.15,
-      "sample_size": 251,
-      "interpretation": "Text content is semantically stable"
-    },
-    {
-      "check": "prompt_input_validation",
-      "status": "PASS",
-      "total_inputs": 60,
-      "valid": 60,
-      "quarantined": 0,
-      "quarantine_rate": 0.0,
-      "sample_errors": []
-    },
     {
       "check": "llm_output_schema",
       "status": "PASS",
-      "run_date": "2026-04-01",
+      "run_date": "2026-04-04",
       "prompt_hash": "2fb99f3e55f4",
       "total_outputs": 55,
       "schema_violations": 0,
       "violation_rate": 0.0,
-      "trend": "unknown",
-      "baseline_violation_rate": null,
+      "trend": "stable",
+      "baseline_violation_rate": 0.0,
       "warn_threshold": 0.02,
       "sample_violations": []
     }

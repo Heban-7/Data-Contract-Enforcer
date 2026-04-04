@@ -131,33 +131,80 @@ def load_ai_metrics(path: str = "validation_reports/ai_metrics.json") -> dict:
     return {}
 
 
+def resolve_contract_path(check_id: str) -> str:
+    contract_id = check_id.split(".", 1)[0]
+    expected = Path("generated_contracts") / f"{contract_id.replace('-', '_')}.yaml"
+    if expected.exists():
+        return str(expected)
+    return f"generated_contracts/{contract_id.replace('-', '_')}.yaml"
+
+
+def derive_clause_identifier(result: dict) -> str:
+    check_id = result.get("check_id", "")
+    parts = check_id.split(".")
+    if len(parts) >= 3:
+        return f"{parts[1]}.{parts[2]}"
+    col = result.get("column_name", "unknown")
+    ctype = result.get("check_type", "check")
+    return f"{col}.{ctype}"
+
+
+def build_action_from_failure(
+    failure: dict, violations_by_check_id: dict[str, list[dict]]
+) -> str:
+    check_id = failure.get("check_id", "unknown.check")
+    contract_file = resolve_contract_path(check_id)
+    clause_id = derive_clause_identifier(failure)
+    detail = failure.get("message", "resolve the failing check")
+
+    attribution_note = ""
+    linked_violations = violations_by_check_id.get(check_id, [])
+    if linked_violations:
+        v = linked_violations[0]
+        blame_chain = v.get("blame_chain", [])
+        top_file = blame_chain[0].get("file_path") if blame_chain else "upstream source"
+        depth = v.get("blast_radius", {}).get("max_contamination_depth")
+        if depth is not None:
+            attribution_note = (
+                f" Probable source: {top_file}; contamination depth={depth}."
+            )
+        else:
+            attribution_note = f" Probable source: {top_file}."
+
+    return (
+        f"Fix `{check_id}` by updating upstream producer logic; align with "
+        f"`{contract_file}` clause `{clause_id}`. {detail}.{attribution_note}"
+    )
+
+
 def generate_recommendations(all_failures: list[dict],
-                              schema_changes: list[dict]) -> list[str]:
+                              schema_changes: list[dict],
+                              violations: list[dict]) -> list[str]:
     """Generate 3 prioritized, specific recommendations."""
     recommendations = []
+    violations_by_check_id: dict[str, list[dict]] = {}
+    for v in violations:
+        cid = v.get("check_id", "")
+        if cid:
+            violations_by_check_id.setdefault(cid, []).append(v)
 
-    critical = [f for f in all_failures if f.get("severity") == "CRITICAL"]
-    high = [f for f in all_failures if f.get("severity") == "HIGH"]
+    severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "WARNING": 4}
+    ranked_failures = sorted(
+        all_failures,
+        key=lambda f: severity_order.get(f.get("severity", "LOW"), 99),
+    )
 
-    for f in critical[:2]:
-        col = f.get("column_name", "unknown")
-        system = f.get("check_id", "").split(".")[0]
-        recommendations.append(
-            f"Fix {col} in {system}: {f.get('message', 'resolve violation')}"
-        )
-
-    for f in high[:1]:
-        col = f.get("column_name", "unknown")
-        system = f.get("check_id", "").split(".")[0]
-        recommendations.append(
-            f"Investigate {col} in {system}: {f.get('message', 'check drift')}"
-        )
+    for f in ranked_failures[:3]:
+        recommendations.append(build_action_from_failure(f, violations_by_check_id))
 
     for sc in schema_changes:
         if sc.get("overall_verdict") == "BREAKING":
+            contract_id = sc.get("contract_id", "unknown")
+            contract_file = f"generated_contracts/{contract_id.replace('-', '_')}.yaml"
             recommendations.append(
-                f"Review breaking schema change in {sc.get('contract_id', 'unknown')}. "
-                f"Follow the migration checklist before deploying."
+                f"Review breaking schema evolution in `{contract_file}` "
+                f"(contract `{contract_id}`) and execute the migration checklist "
+                "before deployment."
             )
             break
 
@@ -233,7 +280,9 @@ def generate_report(
         if "violation_rate" in data:
             ai_risk[check_name]["violation_rate"] = data["violation_rate"]
 
-    recommendations = generate_recommendations(all_failures, schema_changes)
+    recommendations = generate_recommendations(
+        all_failures, schema_changes, violations
+    )
 
     now = datetime.now(timezone.utc)
     report = {

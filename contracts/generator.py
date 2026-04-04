@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import json
+import os
 import shutil
 import uuid
 import hashlib
@@ -171,6 +172,180 @@ def column_to_clause(profile: dict) -> dict:
     return clause
 
 
+def detect_suspicious_distribution(profile: dict) -> list[str]:
+    """Flag suspicious numeric distributions that may hide silent corruption."""
+    warnings: list[str] = []
+    name = profile.get("name", "")
+    stats = profile.get("stats", {})
+    if not stats:
+        return warnings
+
+    col_min = stats.get("min")
+    col_max = stats.get("max")
+    col_mean = stats.get("mean")
+    col_std = stats.get("stddev", 0.0) or 0.0
+    p25 = stats.get("p25")
+    p75 = stats.get("p75")
+
+    if "confidence" in name and isinstance(col_mean, (int, float)):
+        if col_mean > 0.99:
+            warnings.append(
+                "mean_confidence_gt_0_99: distribution appears clamped near 1.0"
+            )
+        if col_mean < 0.01:
+            warnings.append(
+                "mean_confidence_lt_0_01: distribution appears collapsed near 0.0"
+            )
+        if isinstance(col_max, (int, float)) and col_max > 1.0:
+            warnings.append(
+                "confidence_max_gt_1_0: possible scale shift from 0.0-1.0 to 0-100"
+            )
+
+    if isinstance(col_std, (int, float)) and col_std < 1e-6:
+        warnings.append("near_constant_distribution: stddev is near zero")
+
+    if (
+        isinstance(p25, (int, float))
+        and isinstance(p75, (int, float))
+        and p25 == p75
+        and isinstance(col_min, (int, float))
+        and isinstance(col_max, (int, float))
+        and col_min != col_max
+    ):
+        warnings.append(
+            "compressed_iqr: interquartile range collapsed while min/max still vary"
+        )
+
+    return warnings
+
+
+def is_ambiguous_column(profile: dict) -> bool:
+    """Heuristic: column meaning isn't obvious from name alone."""
+    name = profile.get("name", "")
+    dtype = profile.get("dtype", "")
+    if dtype not in ("object", "string"):
+        return False
+    if name.endswith("_id") or name.endswith("_at") or "hash" in name:
+        return False
+    if name in ("source_path", "codebase_root", "file", "symbol"):
+        return False
+    if profile.get("cardinality_estimate", 0) <= 1:
+        return False
+    if profile.get("cardinality_estimate", 0) <= 10 and profile.get("sample_values"):
+        return False
+    return True
+
+
+def local_annotation(
+    table_name: str,
+    column_name: str,
+    sample_values: list[str],
+    adjacent_columns: list[str],
+) -> dict:
+    hint = " / ".join(sample_values[:3]) if sample_values else "no samples"
+    return {
+        "column": column_name,
+        "description": (
+            f"Likely business descriptor in {table_name}; inferred from sample values: "
+            f"{hint}."
+        ),
+        "business_rule": f"{column_name} should be non-empty and semantically stable.",
+        "cross_column_relationship": (
+            f"Interpret together with adjacent columns: {adjacent_columns[:5]}"
+        ),
+        "source": "heuristic_fallback",
+    }
+
+
+def llm_annotation(
+    table_name: str,
+    column_name: str,
+    sample_values: list[str],
+    adjacent_columns: list[str],
+    model: str = "gpt-4o-mini",
+) -> dict:
+    """Try LLM annotation; fallback to local heuristic on any failure."""
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return local_annotation(table_name, column_name, sample_values, adjacent_columns)
+
+    prompt = {
+        "table_name": table_name,
+        "column_name": column_name,
+        "sample_values": sample_values[:5],
+        "adjacent_columns": adjacent_columns[:8],
+        "task": (
+            "Return strict JSON with keys: description, business_rule, "
+            "cross_column_relationship."
+        ),
+    }
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are a data contract analyst."},
+                {"role": "user", "content": json.dumps(prompt)},
+            ],
+            temperature=0,
+        )
+        text = resp.choices[0].message.content if resp.choices else ""
+        parsed = json.loads(text) if text else {}
+        return {
+            "column": column_name,
+            "description": parsed.get("description", "").strip() or local_annotation(
+                table_name, column_name, sample_values, adjacent_columns
+            )["description"],
+            "business_rule": parsed.get("business_rule", "").strip()
+            or f"{column_name} should follow stable semantics.",
+            "cross_column_relationship": parsed.get(
+                "cross_column_relationship", ""
+            ).strip()
+            or f"Correlates with columns: {adjacent_columns[:5]}",
+            "source": "llm",
+        }
+    except Exception:
+        return local_annotation(table_name, column_name, sample_values, adjacent_columns)
+
+
+def annotate_ambiguous_columns(
+    table_name: str,
+    column_profiles: dict[str, dict],
+    enable_llm: bool,
+    llm_model: str,
+) -> list[dict]:
+    annotations: list[dict] = []
+    columns = list(column_profiles.keys())
+    for idx, col in enumerate(columns):
+        profile = column_profiles[col]
+        if not is_ambiguous_column(profile):
+            continue
+        adjacent = []
+        if idx > 0:
+            adjacent.append(columns[idx - 1])
+        if idx + 1 < len(columns):
+            adjacent.append(columns[idx + 1])
+        annotation = (
+            llm_annotation(
+                table_name=table_name,
+                column_name=col,
+                sample_values=profile.get("sample_values", []),
+                adjacent_columns=adjacent,
+                model=llm_model,
+            )
+            if enable_llm
+            else local_annotation(
+                table_name=table_name,
+                column_name=col,
+                sample_values=profile.get("sample_values", []),
+                adjacent_columns=adjacent,
+            )
+        )
+        annotations.append(annotation)
+    return annotations
+
+
 # ---------------------------------------------------------------------------
 # Lineage injection
 # ---------------------------------------------------------------------------
@@ -222,7 +397,9 @@ def inject_lineage(contract: dict, lineage_snapshot: dict | None,
 # ---------------------------------------------------------------------------
 
 def build_contract(contract_id: str, source_path: str,
-                   column_profiles: dict[str, dict]) -> dict:
+                   column_profiles: dict[str, dict],
+                   suspicious_warnings: dict[str, list[str]],
+                   llm_annotations: list[dict]) -> dict:
     contract = {
         "kind": "DataContract",
         "apiVersion": "v3.0.0",
@@ -254,10 +431,18 @@ def build_contract(contract_id: str, source_path: str,
                 "checks": []
             }
         },
+        "profiling_warnings": [],
+        "llm_annotations": llm_annotations,
     }
 
     for col_name, profile in column_profiles.items():
         clause = column_to_clause(profile)
+        if suspicious_warnings.get(col_name):
+            clause["x_anomaly_hints"] = suspicious_warnings[col_name]
+            for warning in suspicious_warnings[col_name]:
+                contract["profiling_warnings"].append(
+                    {"column": col_name, "warning": warning}
+                )
         contract["schema"][col_name] = clause
 
         if clause.get("required"):
@@ -279,6 +464,39 @@ def build_contract(contract_id: str, source_path: str,
     contract["quality"]["specification"]["checks"].append("row_count >= 1")
 
     return contract
+
+
+def write_generation_baselines(
+    contract_id: str,
+    column_profiles: dict[str, dict],
+    path: str = "schema_snapshots/baselines.json",
+):
+    """Persist numeric baselines during generation for downstream drift checks."""
+    p = Path(path)
+    if p.exists():
+        with open(p, encoding="utf-8") as f:
+            data = json.load(f)
+    else:
+        data = {"written_at": "", "columns": {}}
+
+    data.setdefault("columns", {})
+    now = datetime.now(timezone.utc).isoformat()
+    for col_name, profile in column_profiles.items():
+        stats = profile.get("stats")
+        if not stats:
+            continue
+        data["columns"][col_name] = {
+            "mean": float(stats.get("mean", 0.0)),
+            "stddev": float(stats.get("stddev", 0.0)),
+            "contract_id": contract_id,
+            "source": "generator",
+            "updated_at": now,
+        }
+    data["written_at"] = now
+
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
 
 
 # ---------------------------------------------------------------------------
@@ -338,6 +556,16 @@ def main():
     parser.add_argument("--lineage", default=None,
                         help="Path to Week 4 lineage_snapshots.jsonl")
     parser.add_argument("--output", required=True, help="Output directory for contracts")
+    parser.add_argument(
+        "--enable-llm",
+        action="store_true",
+        help="Enable LLM annotation for ambiguous columns",
+    )
+    parser.add_argument(
+        "--llm-model",
+        default="gpt-4o-mini",
+        help="LLM model used for annotations when --enable-llm is set",
+    )
     args = parser.parse_args()
 
     print(f"Loading data from {args.source}...")
@@ -352,9 +580,26 @@ def main():
     column_profiles = {}
     for col in df.columns:
         column_profiles[col] = profile_column(df[col], col)
+    suspicious_warnings = {
+        col: detect_suspicious_distribution(profile)
+        for col, profile in column_profiles.items()
+    }
+    table_name = Path(args.source).stem
+    llm_annotations = annotate_ambiguous_columns(
+        table_name=table_name,
+        column_profiles=column_profiles,
+        enable_llm=args.enable_llm,
+        llm_model=args.llm_model,
+    )
 
     print("Building contract...")
-    contract = build_contract(args.contract_id, args.source, column_profiles)
+    contract = build_contract(
+        args.contract_id,
+        args.source,
+        column_profiles,
+        suspicious_warnings,
+        llm_annotations,
+    )
 
     print("Injecting lineage context...")
     lineage = load_lineage(args.lineage)
@@ -387,6 +632,8 @@ def main():
     generate_dbt_schema(contract, dbt_path)
     print(f"  dbt schema written to {dbt_path}")
 
+    write_generation_baselines(args.contract_id, column_profiles)
+    print("  Generation baselines written to schema_snapshots/baselines.json")
     write_snapshot(contract_path, args.contract_id)
 
     total_clauses = len(contract.get("schema", {}))

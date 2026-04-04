@@ -1,0 +1,41 @@
+{
+  "version": "1.0.0",
+  "generated_at": "2026-04-04T00:00:00Z",
+  "subscriptions": [
+    {
+      "subscription_id": "sub-week1-to-week2-intent-target",
+      "upstream_system": "week1",
+      "downstream_system": "week2",
+      "fields_consumed": ["intent_id", "code_refs_file", "created_at"],
+      "breaking_fields": ["intent_id", "code_refs_file", "created_at"]
+    },
+    {
+      "subscription_id": "sub-week3-to-week4-extraction-lineage",
+      "upstream_system": "week3",
+      "downstream_system": "week4",
+      "fields_consumed": ["doc_id", "extracted_facts_confidence", "entities_type"],
+      "breaking_fields": ["doc_id", "extracted_facts_confidence", "entities_type"]
+    },
+    {
+      "subscription_id": "sub-week4-to-week7-attribution-lineage",
+      "upstream_system": "week4",
+      "downstream_system": "week7_attributor",
+      "fields_consumed": ["nodes", "edges", "git_commit"],
+      "breaking_fields": ["nodes", "edges", "git_commit"]
+    },
+    {
+      "subscription_id": "sub-week5-to-week7-validation-events",
+      "upstream_system": "week5",
+      "downstream_system": "week7_runner",
+      "fields_consumed": ["event_type", "payload", "schema_version"],
+      "breaking_fields": ["event_type", "payload", "schema_version"]
+    },
+    {
+      "subscription_id": "sub-week2-to-week7-ai-output",
+      "upstream_system": "week2",
+      "downstream_system": "week7_ai_extensions",
+      "fields_consumed": ["overall_verdict", "overall_score", "confidence"],
+      "breaking_fields": ["overall_verdict", "overall_score", "confidence"]
+    }
+  ]
+}

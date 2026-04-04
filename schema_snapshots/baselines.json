@@ -1,25 +1,40 @@
 {
-  "written_at": "2026-04-01T19:26:22.478392+00:00",
+  "written_at": "2026-04-04T20:11:57.676323+00:00",
   "columns": {
     "processing_time_ms": {
-      "mean": 1948.463895,
-      "stddev": 1014.535013
+      "mean": 1948.4639,
+      "stddev": 1014.535,
+      "contract_id": "week3-document-refinery-extractions",
+      "source": "generator",
+      "updated_at": "2026-04-04T20:11:57.676323+00:00"
     },
     "token_count_input": {
-      "mean": 4828.824945,
-      "stddev": 1589.166846
+      "mean": 4828.8249,
+      "stddev": 1589.1668,
+      "contract_id": "week3-document-refinery-extractions",
+      "source": "generator",
+      "updated_at": "2026-04-04T20:11:57.676323+00:00"
     },
     "token_count_output": {
-      "mean": 1116.809628,
-      "stddev": 475.022041
+      "mean": 1116.8096,
+      "stddev": 475.022,
+      "contract_id": "week3-document-refinery-extractions",
+      "source": "generator",
+      "updated_at": "2026-04-04T20:11:57.676323+00:00"
     },
     "extracted_facts_confidence": {
-      "mean": 0.768327,
-      "stddev": 0.124102
+      "mean": 0.7683,
+      "stddev": 0.1241,
+      "contract_id": "week3-document-refinery-extractions",
+      "source": "generator",
+      "updated_at": "2026-04-04T20:11:57.676323+00:00"
     },
     "extracted_facts_page_ref": {
-      "mean": 10.674074,
-      "stddev": 5.870276
+      "mean": 10.6741,
+      "stddev": 5.8703,
+      "contract_id": "week3-document-refinery-extractions",
+      "source": "generator",
+      "updated_at": "2026-04-04T20:11:57.676323+00:00"
     }
   }
 }

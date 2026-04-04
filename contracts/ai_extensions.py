@@ -261,6 +261,65 @@ def write_ai_metrics(results: dict, output_path: str):
         json.dump(results, f, indent=2, default=str)
 
 
+def load_previous_violation_rate(
+    metrics_path: str = "validation_reports/ai_metrics.json",
+) -> float | None:
+    p = Path(metrics_path)
+    if not p.exists():
+        return None
+    try:
+        with open(p, encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("metrics", {}).get("llm_output_schema", {}).get("violation_rate")
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def append_warn_violation_record(
+    llm_result: dict, path: str = "violation_log/violations.jsonl"
+):
+    """Surface WARN-level LLM schema risks in the unified violation log."""
+    if llm_result.get("status") != "WARN":
+        return
+
+    record = {
+        "violation_id": str(uuid.uuid4()),
+        "type": "llm_output_schema",
+        "check_id": "ai.llm_output_schema.violation_rate",
+        "detected_at": datetime.now(timezone.utc).isoformat(),
+        "severity": "WARNING",
+        "status": "WARN",
+        "message": (
+            "LLM output schema violation rate reached warning threshold."
+        ),
+        "details": {
+            "prompt_hash": llm_result.get("prompt_hash"),
+            "total_outputs": llm_result.get("total_outputs"),
+            "schema_violations": llm_result.get("schema_violations"),
+            "violation_rate": llm_result.get("violation_rate"),
+            "baseline_violation_rate": llm_result.get("baseline_violation_rate"),
+            "trend": llm_result.get("trend"),
+            "warn_threshold": llm_result.get("warn_threshold"),
+        },
+        "blame_chain": [],
+        "blast_radius": {
+            "affected_nodes": ["week2", "week7_ai_extensions", "enforcer_report"],
+            "affected_pipelines": ["week7_ai_extensions"],
+            "contamination_depth": {
+                "week7_ai_extensions": 1,
+                "enforcer_report": 2,
+            },
+            "max_contamination_depth": 2,
+            "estimated_records": llm_result.get("schema_violations", 0),
+        },
+    }
+
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -318,8 +377,12 @@ def main():
     if args.mode in ("all", "output"):
         print("\n  Extension 3: LLM Output Schema Enforcement")
         verdicts = load_jsonl(args.verdicts)
-        output_result = check_output_schema_violation_rate(verdicts)
+        baseline_rate = load_previous_violation_rate()
+        output_result = check_output_schema_violation_rate(
+            verdicts, baseline_rate=baseline_rate
+        )
         results["checks"].append(output_result)
+        append_warn_violation_record(output_result)
         print(f"    Status: {output_result['status']}, "
               f"Violation rate: {output_result['violation_rate']}")
 

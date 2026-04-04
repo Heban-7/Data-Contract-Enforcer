@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-01T19:34:26.522478+00:00",
-  "period": "2026-03-25 to 2026-04-01",
+  "generated_at": "2026-04-04T20:12:32.175350+00:00",
+  "period": "2026-03-28 to 2026-04-04",
   "data_health_score": 50,
   "health_narrative": "Data health score of 50/100. 2 critical issue(s) require immediate action. Data quality is degraded.",
   "violations_summary": {
@@ -26,23 +26,16 @@
     }
   ],
   "ai_system_risk_assessment": {
-    "embedding_drift": {
-      "status": "PASS",
-      "drift_score": 0.0
-    },
-    "prompt_input_validation": {
-      "status": "PASS"
-    },
     "llm_output_schema": {
       "status": "PASS",
       "violation_rate": 0.0
     }
   },
-  "violation_log_count": 3,
+  "violation_log_count": 5,
   "recommendations": [
-    "Fix entities_type in week3-document-refinery-extractions: entities_type has 2 values not in allowed enum.",
-    "Fix extracted_facts_confidence in week3-document-refinery-extractions: extracted_facts_confidence is in 55.0-98.0 range, not 0.0-1.0. Breaking change detected.",
-    "Investigate extracted_facts_confidence in week3-document-refinery-extractions: extracted_facts_confidence mean drifted 612.9 stddev from baseline."
+    "Fix `week3-document-refinery-extractions.entities_type.enum` by updating upstream producer logic; align with `generated_contracts\\week3_document_refinery_extractions.yaml` clause `entities_type.enum`. entities_type has 2 values not in allowed enum.. Probable source: repository-wide.",
+    "Fix `week3-document-refinery-extractions.extracted_facts_confidence.range` by updating upstream producer logic; align with `generated_contracts\\week3_document_refinery_extractions.yaml` clause `extracted_facts_confidence.range`. extracted_facts_confidence is in 55.0-98.0 range, not 0.0-1.0. Breaking change detected.. Probable source: repository-wide.",
+    "Fix `week3-document-refinery-extractions.extracted_facts_confidence.statistical_drift` by updating upstream producer logic; align with `generated_contracts\\week3_document_refinery_extractions.yaml` clause `extracted_facts_confidence.statistical_drift`. extracted_facts_confidence mean drifted 612.9 stddev from baseline.. Probable source: repository-wide."
   ],
   "validation_reports_analyzed": 3
 }
