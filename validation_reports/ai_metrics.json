@@ -1,6 +1,14 @@
 {
   "run_date": "2026-04-04",
   "metrics": {
+    "embedding_drift": {
+      "status": "PASS",
+      "drift_score": 0.0
+    },
+    "prompt_input_validation": {
+      "status": "PASS",
+      "quarantine_rate": 0.0
+    },
     "llm_output_schema": {
       "status": "PASS",
       "violation_rate": 0.0

@@ -1,7 +1,24 @@
 {
-  "run_id": "1a50b53c-4077-4baf-91c7-39bb7af3cf65",
-  "run_timestamp": "2026-04-04T20:12:10.109166+00:00",
+  "run_id": "e9873626-f691-4a5a-9d64-e7da44dd5f69",
+  "run_timestamp": "2026-04-04T22:24:23.163580+00:00",
   "checks": [
+    {
+      "check": "embedding_drift",
+      "status": "PASS",
+      "drift_score": 0.0,
+      "threshold": 0.15,
+      "sample_size": 251,
+      "interpretation": "Text content is semantically stable"
+    },
+    {
+      "check": "prompt_input_validation",
+      "status": "PASS",
+      "total_inputs": 60,
+      "valid": 60,
+      "quarantined": 0,
+      "quarantine_rate": 0.0,
+      "sample_errors": []
+    },
     {
       "check": "llm_output_schema",
       "status": "PASS",
